@@ -9,10 +9,17 @@ Meaning: you must wait for your 1st ajax callback to send your 2nd request, and 
 for its callback to send your 3rd request, etc.
 
 */
+let Shopify= {};
 
 if ((typeof Shopify) === 'undefined') {
   Shopify = {};
 }
+
+/*
+ Initialise an empty queue.
+*/
+Shopify.queue = [];
+
 
 /* 
 
@@ -365,3 +372,106 @@ function attributeToString(attribute) {
   // Removing leading and trailing whitespace.
   return jQuery.trim(attribute);
 }
+
+// ---------------------------------------------------------
+// Adds an item to Shopify.queue
+// Which is then used by functions such as 
+// Shopify.addQueuedItems() and Shopify.removeQueuedItems.
+// ---------------------------------------------------------
+Shopify.addToQueue = function(itemId, quantity) {
+  Shopify.queue.push({id: itemId, quantity: quantity});
+};
+
+// ---------------------------------------------------------
+// POST to cart/add.js returns the line item in JSON.
+// Adds an item to the cart that has been added to the queue
+// Loops around until theres no items left and then runs the
+// Callback function.
+// ---------------------------------------------------------
+Shopify.addQueuedItems = function(callback) {
+  if (Shopify.queue.length) {
+    var item = Shopify.queue.shift();
+    jQuery.ajax({
+      url: '/cart/add.js',
+      method: 'POST',
+      data: {
+        id: item.id,
+        quantity: item.quantity
+      },
+      dataType: 'json',
+      success: function(line_item) {
+        Shopify.onItemAdded(line_item);
+        Shopify.addQueuedItems(callback);
+      },
+      error: function(error) {
+        console.log("There was an error: " + error);
+      }
+    });
+  } else {
+    if ((typeof callback) === "function") {
+      callback();
+    }
+  }
+};
+
+// ---------------------------------------------------------
+// POST to cart/change.js returns the cart in JSON.
+// Removes one item from the cart using the queue.
+// It turns the quantity of that item to 0 and loops backaround
+// ---------------------------------------------------------
+Shopify.removeQueuedItems = function(callback, cart) {
+  if (Shopify.queue.length) {
+    var item = Shopify.queue.shift();
+
+    jQuery.ajax({
+      url: '/cart/change.js',
+      method: "POST",
+      data: {
+        id: item.id,
+        quantity: 0
+      },
+      dataType: 'json',
+      success: function(cart) {
+        Shopify.removeQueuedItems(callback, cart);
+      }
+    });
+
+    if ((typeof callback) === 'function') {
+      callback(cart);
+    } else {
+      Shopify.onCartUpdate(cart);
+    }
+  }
+};
+
+// ---------------------------------------------------------
+// POST to cart/change.js returns the cart in JSON.
+// When passed a line number (1-indexed) and some data
+// it will change the data of that item.
+// ---------------------------------------------------------
+
+Shopify.changeItemByLine = function(line, properties) {
+  if (line > 0) {
+    var data = {line: line};
+    //Cant use Object.assign() just in case we come across someone using IE <= 10
+    for (var key in properties) {
+      data[key] = properties[key];
+    }
+
+    jQuery.ajax({
+      url: '/cart/change.js',
+      method: 'POST',
+      data: data,
+      dataType: 'json',
+      success: function(cart) {
+        if((typeof callback) === 'function') {
+          callback(cart);
+        } else {
+          Shopify.onCartUpdate(cart);
+        }
+      }
+    })
+  }
+};
+
+
